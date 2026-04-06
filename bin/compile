@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+set -o errexit
+set -o pipefail
+set -o posix
+
+# Configure Directories
+build_dir="$1"
+cache_dir="$2"
+env_dir="$3"
+heroku_dir="${build_dir}/.heroku"
+mkdir -p "${heroku_dir}/mongo"
+
+FALLBACK_VERSION="100.16.0"
+
+# Fetch latest download URL from MongoDB's archive page
+echo "-----> Fetching latest MongoDB Database Tools..."
+
+download_url=$(
+  curl -s https://www.mongodb.com/try/download/database-tools/releases/archive \
+  | grep -oE 'https://fastdl\.mongodb\.org/tools/db/mongodb-database-tools-amazon2-x86_64-[0-9.]+\.tgz' \
+  | head -1
+)
+
+if [ -z "${download_url}" ]; then
+  echo "       WARNING: Could not fetch latest, falling back to ${FALLBACK_VERSION}"
+  download_url="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-amazon2-x86_64-${FALLBACK_VERSION}.tgz"
+fi
+
+version=$(echo "${download_url}" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+folder_name="mongodb-database-tools-amazon2-x86_64-${version}"
+
+# Use cache if same version
+if [ -f "${cache_dir}/mongo_tools_version" ] && \
+   [ "$(cat "${cache_dir}/mongo_tools_version")" = "${version}" ]; then
+  echo "-----> Using cached MongoDB Database Tools ${version}"
+  cp -r "${cache_dir}/mongo/"* "${heroku_dir}/mongo/"
+else
+  echo "-----> Downloading MongoDB Database Tools ${version}..."
+  echo "       URL: ${download_url}"
+  curl "${download_url}" -s -o - | tar xzf - -C /tmp
+  mv "/tmp/${folder_name}/"* "${heroku_dir}/mongo"
+
+  # Cache for next build
+  mkdir -p "${cache_dir}/mongo"
+  cp -r "${heroku_dir}/mongo/"* "${cache_dir}/mongo/"
+  echo "${version}" > "${cache_dir}/mongo_tools_version"
+fi
+
+chmod +x "${heroku_dir}/mongo/bin/"*
+
+# Add to PATH at runtime
+echo "-----> Creating runtime environment"
+mkdir -p "${build_dir}/.profile.d"
+echo "export PATH=\"\$HOME/.heroku/mongo/bin:\$PATH\"" > "${build_dir}/.profile.d/mongo.sh"
+
+echo "-----> MongoDB Database Tools ${version} installed successfully!"

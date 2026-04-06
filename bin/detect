@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "MongoDB Database Tools"
+exit 0
